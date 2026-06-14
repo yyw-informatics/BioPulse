@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  lightweight:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Compile source
+        run: python -m compileall -q biopulse_lg
+
+      - name: Run hermetic tests
+        run: |
+          python -m pytest -q \
+            tests/test_behavior.py \
+            tests/test_execution.py \
+            tests/test_models.py \
+            tests/test_openai_agent.py \
+            tests/test_tracing.py
+
+      - name: Publication guard
+        run: |
+          set -eu
+
+          markdown="$(git ls-files | grep -Ei '(^|/)(readme[^/]*|.*\.(md|markdown|mdx))$' || true)"
+          if [ "$markdown" != "README.md" ]; then
+            echo "Only README.md should be tracked as Markdown/README-like documentation."
+            echo "$markdown"
+            exit 1
+          fi
+
+          env_files="$(git ls-files | grep -Ei '(^|/)(\.env|.*\.env|.*\.env\..*)$' || true)"
+          if [ -n "$env_files" ]; then
+            echo "Environment files must not be tracked."
+            echo "$env_files"
+            exit 1
+          fi
+
+          data_files="$(git ls-files | grep -Ei '\.(h5ad|h5|hdf5|loom|jsonl)$|(^|/).+\.zarr/' || true)"
+          if [ -n "$data_files" ]; then
+            echo "Dataset/run artifact files must not be tracked."
+            echo "$data_files"
+            exit 1
+          fi
